@@ -24,6 +24,10 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/** List of processes in THREAD_BLOCKED state, waiting for a certain
+  amount of ticks to wakeup. */
+static struct list sleep_list;
+
 /** List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -91,6 +95,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&sleep_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -202,6 +207,57 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   return tid;
+}
+
+/**
+   Wakes up threads that are ready to run based on the current tick count.
+   Moves threads from the sleep list to the ready list if their wakeup time has arrived.
+*/
+void wakeup_threads(void) {
+    // Check if the sleep list is empty.
+    while (!list_empty(&sleep_list)) {
+        struct thread *wakeup_head = list_entry(list_front(&sleep_list), struct thread, elem);
+
+        // If the current tick count is greater than or equal to the wakeup tick of the head thread.
+        if (timer_ticks() >= wakeup_head->wakeup_tick) {
+            list_pop_front(&sleep_list);  // Remove the thread from the sleep list.
+            list_push_back(&ready_list, &(wakeup_head->elem));  // Add it to the ready list.
+        } else {
+            // If the head thread's wakeup time has not arrived, exit the loop.
+            break;
+        }
+    }
+}
+
+/**
+  This function is used to compare two threads' wakeup ticks
+  to determine their order in the sleep list. It is intended 
+  to be used with the `list_insert_ordered()` function as a 
+  custom comparison function that overrides list_less_func.
+ */
+bool
+thread_wakeup_tick_cmp(const struct list_elem *a,const struct list_elem *b,void *aux UNUSED){
+  struct thread *thread_a = list_entry(a, struct thread, elem);
+  struct thread *thread_b = list_entry(b, struct thread, elem);
+
+  return thread_a->wakeup_tick < thread_b->wakeup_tick;
+}
+
+/** Puts a thread to sleep and calls the scheduler. */
+void
+thread_sleep(int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  if(cur!=idle_thread){
+    cur->status=THREAD_BLOCKED;
+    cur->wakeup_tick=ticks;
+    list_insert_ordered(&sleep_list,&cur->elem,thread_wakeup_tick_cmp,NULL);
+    schedule();
+  }
+  intr_set_level (old_level);
 }
 
 /** Puts the current thread to sleep.  It will not be scheduled
