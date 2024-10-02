@@ -13,8 +13,6 @@ struct semaphore
     int priority;
   };
 
-void thread_donate_priority(struct thread *recipient, struct thread *donor);
-
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);

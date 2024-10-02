@@ -133,9 +133,6 @@ const char *thread_name (void);
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
-bool thread_priority_great(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-bool thread_wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-
 /** Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
@@ -148,7 +145,11 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+bool thread_priority_great(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool thread_wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 void wakeup_threads(void);
 void thread_sleep(int64_t ticks); 
+void thread_donate_priority(struct thread *recipient, struct thread *donor);
 
 #endif /**< threads/thread.h */

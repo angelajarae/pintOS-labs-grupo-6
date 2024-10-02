@@ -48,6 +48,7 @@ sema_init (struct semaphore *sema, unsigned value)
   ASSERT (sema != NULL);
 
   sema->value = value;
+  sema->priority=0;
   list_init (&sema->waiters);
 }
 
@@ -429,6 +430,7 @@ cond_broadcast (struct condition *cond, struct lock *lock)
     cond_signal (cond, lock);
 }
 
+/** Compares priority of semaphores, returning true if the first one is greater.*/
 bool
 semaphore_priority_great(const struct list_elem* a, const struct list_elem *b, void* aux UNUSED)
 {

@@ -212,70 +212,6 @@ thread_create (const char *name, int priority,
   return tid;
 }
 
-/**
-   Compares priority between 2 threads and return true if the first one has
-   the lower.
-*/
-bool thread_priority_great
-(const struct list_elem *a, const struct list_elem *b, void *aux) {
-    struct thread *t1 = list_entry(a, struct thread, elem);
-    struct thread *t2 = list_entry(b, struct thread, elem);
-    return t1->priority > t2->priority; 
-}
-
-/**
-   Wakes up threads that are ready to run based on the current tick count.
-   Moves threads from the sleep list to the ready list if their wakeup time has arrived.
-*/
-void wakeup_threads(void) {
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  while (!list_empty(&sleep_list)) {
-    struct thread *wakeup_head = list_entry(list_begin(&sleep_list), struct thread, elem);
-    
-    if (timer_ticks() >= wakeup_head->wakeup_tick) {
-        wakeup_head->wakeup_tick = 0;  
-        list_remove(&wakeup_head->elem);  
-        thread_unblock(wakeup_head); 
-    } else {
-        break;  
-    }
-  }
-}
-
-
-/**
-  This function is used to compare two threads' wakeup ticks
-  to determine their order in the sleep list. It is intended 
-  to be used with the `list_insert_ordered()` function as a 
-  custom comparison function that overrides list_less_func.
- */
-bool
-thread_wakeup_tick_less(const struct list_elem *a,const struct list_elem *b,void *aux UNUSED){
-  struct thread *t1 = list_entry(a, struct thread, elem);
-  struct thread *t2 = list_entry(b, struct thread, elem);
-
-  return t1->wakeup_tick < t2->wakeup_tick;
-}
-
-/** Puts a thread to sleep and calls the scheduler. */
-void
-thread_sleep(int64_t ticks)
-{
-  struct thread *cur = thread_current ();
-  enum intr_level old_level;
-
-  ASSERT(cur!=idle_thread);
-
-  old_level = intr_disable ();
-
-  cur->wakeup_tick=ticks;
-  list_insert_ordered(&sleep_list,&cur->elem,thread_wakeup_tick_less,NULL);
-  thread_block();
-
-  intr_set_level (old_level);
-}
-
 /** Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -683,8 +619,74 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+/**
+   Compares priority between 2 threads and return true if the first one has
+   the lower.
+*/
+bool 
+thread_priority_great
+(const struct list_elem *a, const struct list_elem *b, void *aux) {
+    struct thread *t1 = list_entry(a, struct thread, elem);
+    struct thread *t2 = list_entry(b, struct thread, elem);
+    return t1->priority > t2->priority; 
+}
+
+/**
+  This function is used to compare two threads' wakeup ticks
+  to determine their order in the sleep list. It is intended 
+  to be used with the `list_insert_ordered()` function as a 
+  custom comparison function that overrides list_less_func.
+ */
+bool
+thread_wakeup_tick_less(const struct list_elem *a,const struct list_elem *b,void *aux UNUSED){
+  struct thread *t1 = list_entry(a, struct thread, elem);
+  struct thread *t2 = list_entry(b, struct thread, elem);
+
+  return t1->wakeup_tick < t2->wakeup_tick;
+}
+
+/**
+   Wakes up threads that are ready to run based on the current tick count.
+   Moves threads from the sleep list to the ready list if their wakeup time has arrived.
+*/
+void 
+wakeup_threads(void) {
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  while (!list_empty(&sleep_list)) {
+    struct thread *wakeup_head = list_entry(list_begin(&sleep_list), struct thread, elem);
+    
+    if (timer_ticks() >= wakeup_head->wakeup_tick) {
+        wakeup_head->wakeup_tick = 0;  
+        list_remove(&wakeup_head->elem);  
+        thread_unblock(wakeup_head); 
+    } else {
+        break;  
+    }
+  }
+}
+
+/** Puts a thread to sleep and calls the scheduler. */
+void
+thread_sleep(int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+
+  ASSERT(cur!=idle_thread);
+
+  old_level = intr_disable ();
+
+  cur->wakeup_tick=ticks;
+  list_insert_ordered(&sleep_list,&cur->elem,thread_wakeup_tick_less,NULL);
+  thread_block();
+
+  intr_set_level (old_level);
+}
+
 /**Set a thread priority to a higher new priority*/
-void thread_donate_priority(struct thread *recipient, struct thread *donor) {
+void 
+thread_donate_priority(struct thread *recipient, struct thread *donor) {
   enum intr_level old_level;
   old_level = intr_disable ();
 
