@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "pit.h": "c"
+        "pit.h": "c",
+        "random": "c",
+        "stdbool.h": "c",
+        "list.h": "c"
     }
 }

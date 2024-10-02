@@ -2,6 +2,7 @@
 #define THREADS_SYNCH_H
 
 #include <list.h>
+#include "threads/thread.h"
 #include <stdbool.h>
 
 /** A counting semaphore. */
@@ -9,7 +10,10 @@ struct semaphore
   {
     unsigned value;             /**< Current value. */
     struct list waiters;        /**< List of waiting threads. */
+    int priority;
   };
+
+void thread_donate_priority(struct thread *recipient, struct thread *donor);
 
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);
@@ -40,6 +44,8 @@ void cond_init (struct condition *);
 void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
+
+bool semaphore_priority_great(const struct list_elem* a, const struct list_elem *b, void* aux UNUSED);
 
 /** Optimization barrier.
 
