@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/fixed_point.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -96,6 +97,9 @@ struct thread
     struct list donors;              /**< List of threads that have donated their priority to this thread. */
     struct list_elem donation_elem;     /**< List element for donors list. */
     struct lock *wait_lock;             /**< Lock that this thread is currently waiting on (if any). */
+
+    int nice;                           /* Thread's niceness value */
+    fixed_point recent_cpu;             /* Measures how much CPU time each thread has received recently */
     
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
@@ -151,5 +155,11 @@ bool thread_wakeup_tick_less(const struct list_elem *a, const struct list_elem *
 void wakeup_threads(void);
 void thread_sleep(int64_t ticks); 
 void thread_donate_priority(struct thread *recipient, struct thread *donor);
+
+void thread_mlfqs_inc_recent_cpu(void);
+void mlfqs_updt_load_average(void);
+void thread_mlfqs_priority(struct thread *t);
+void thread_mlfqs_updt_recent_cpu(void);
+void thread_mlfqs_updt_priority(void);
 
 #endif /**< threads/thread.h */

@@ -3,6 +3,8 @@
         "pit.h": "c",
         "random": "c",
         "stdbool.h": "c",
-        "list.h": "c"
+        "list.h": "c",
+        "timer.h": "c",
+        "thread.h": "c"
     }
 }
