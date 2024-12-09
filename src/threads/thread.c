@@ -521,6 +521,10 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donors);
 
   old_level = intr_disable ();
+  #ifdef USERPROG
+    /* init the mapid allocator, which indicate the next mapid */
+    t->mapid_allocator = 0;
+  #endif
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
 }

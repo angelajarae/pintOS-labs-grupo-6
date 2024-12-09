@@ -7,6 +7,8 @@
 #include <stdint.h>
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+typedef int mapid_t;
+
 /** States in a thread's life cycle. */
 enum thread_status
   {
@@ -107,6 +109,11 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
+    /* supplemental page table, which stores as hash table */
+    struct hash suppl_page_table;
+    /* Memory Maped Files table */
+    mapid_t mapid_allocator;
+    struct hash mmfiles; 
 #endif
 
     /* Owned by thread.c. */
