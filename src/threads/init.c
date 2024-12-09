@@ -127,6 +127,11 @@ pintos_init (void)
   filesys_init (format_filesys);
 #endif
 
+#ifdef VM
+  locate_block_devices ();
+  swap_to_pageit ();
+#endif
+
   printf ("Boot complete.\n");
   
   if (*argv != NULL) {

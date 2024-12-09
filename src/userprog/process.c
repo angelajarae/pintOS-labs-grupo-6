@@ -21,6 +21,7 @@
 #include "devices/timer.h"
 #include "userprog/syscall.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -66,9 +67,6 @@ start_process (void *file_name_)
 
   /* init supplemental hash page table */
   hash_init (&cur->suppl_page_table, suppl_pt_hash, suppl_pt_less, NULL);
-
-  /* init memory mapped files table */
-  hash_init (&cur->mmfiles, mmfile_hash, mmfile_less, NULL);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -220,9 +218,9 @@ struct Elf32_Phdr
 #define PF_W 2          /**< Writable. */
 #define PF_R 4          /**< Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp,const char *file_name);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool load_segment_lazy (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
@@ -316,7 +314,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
+              if (!load_segment_lazy (file, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -327,7 +325,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp,file_name))
     goto done;
 
   /* Start address. */
@@ -390,22 +388,14 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
-/** Loads a segment starting at offset OFS in FILE at address
-   UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
-   memory are initialized, as follows:
-
-        - READ_BYTES bytes at UPAGE must be read from FILE
-          starting at offset OFS.
-
-        - ZERO_BYTES bytes at UPAGE + READ_BYTES must be zeroed.
-
-   The pages initialized by this function must be writable by the
-   user process if WRITABLE is true, read-only otherwise.
-
-   Return true if successful, false if a memory allocation error
-   or disk read error occurs. */
+/**  
+   Lazily loads a segment into the user process's virtual address space by using  
+   demand paging. Instead of immediately reading data into physical memory, entries  
+   are added to the supplemental page table, enabling pages to be loaded only when accessed.  
+   This implementation improves efficiency by avoiding unnecessary memory usage until a page is needed.
+*/
 static bool
-load_segment(struct file *file, off_t ofs, uint8_t *upage,
+load_segment_lazily (struct file *file, off_t ofs, uint8_t *upage,
 		     uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -414,122 +404,116 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 
   while (read_bytes > 0 || zero_bytes > 0) 
     {
-      /* Calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
+      /* Determine how many bytes to read from file and how many to zero out. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Add an file suuplemental page entry to supplemental page table */ 
+      /* Add a supplemental page table entry mapping to demand-load this memory. */
       if (!suppl_pt_insert_file (file, ofs, upage, page_read_bytes,
                                  page_zero_bytes, writable))
 	return false;
 
-      /* Advance. */
+      /* Advance counters and pointers for the next page. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       ofs += page_read_bytes;
       upage += PGSIZE;
     }
   return true;
-  
 }
 
-/** Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
+/** Sets up the initial stack for a new user process by creating a minimal stack
+   and pushing the command-line arguments in a format expected by user processes.
+   This includes setting up `argv`, `argc`, and aligning the stack properly.  
+   It ensures compatibility with standard C conventions for argument passing.  
+*/
 static bool
 setup_stack (void **esp, const char *file_name)
 {
   uint8_t *kpage;
   bool success = false;
 
+  // Allocate a zeroed user page at the top of virtual memory for the stack.
   kpage = vm_allocate_frame (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success) {
-  	*esp = PHYS_BASE;
+      // Map allocated page to the user stack space.
+      success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      if (success) 
+      {
+        *esp = PHYS_BASE; // Set initial stack pointer at the top of the user space.
 
         uint8_t *argstr_head;
-        char *cmd_name = thread_current ()->name;
-        int strlength, total_length;
-        int argc;
+        char *cmd_name = thread_current()->name; // Get current thread's command name.
+        int strlength, total_length = 0;
+        int argc = 0;
 
-        /*push the arguments string into stack*/
+        // Push the file name (program name) onto the stack.
         strlength = strlen(file_name) + 1;
         *esp -= strlength;
         memcpy(*esp, file_name, strlength);
         total_length += strlength;
 
-        /*push command name into stack*/
+        // Push the command name onto the stack.
         strlength = strlen(cmd_name) + 1;
         *esp -= strlength;
         argstr_head = *esp;
         memcpy(*esp, cmd_name, strlength);
         total_length += strlength;
 
-        /*set alignment, get the starting address, modify *esp */
+        // Align the stack pointer to a 4-byte boundary for consistency.
         *esp -= 4 - total_length % 4;
 
-        /* push argv[argc] null into the stack */
+        // Push a NULL pointer at the end of arguments list as per standard conventions.
         *esp -= 4;
-        * (uint32_t *) *esp = (uint32_t) NULL;
+        *(uint32_t *) *esp = (uint32_t) NULL;
 
-        /* scan throught the file name with arguments string downward,
-         * using the cur_addr and total_length above to define boundary.
-         * omitting the beginning space or '\0', but for every encounter
-         * after, push the last non-space-and-'\0' address, which is current
-         * address minus 1, as one of argv to the stack, and set the space to
-         * '\0', multiple adjancent spaces and '0' is treated as one.
-         */
+        // Prepare argument pointers by scanning the arguments string backwards,
+        // replacing spaces with null terminators and creating pointers for each argument.
         int i = total_length - 1;
-        /*omitting the starting space and '\0' */
-        while (*(argstr_head + i) == ' ' ||  *(argstr_head + i) == '\0')
-          {
-            if (*(argstr_head + i) == ' ')
-              {
-                *(argstr_head + i) = '\0';
-              }
-            i--;
-          }
+        while (*(argstr_head + i) == ' ' || *(argstr_head + i) == '\0')
+        {
+          if (*(argstr_head + i) == ' ')
+            *(argstr_head + i) = '\0';
+          i--;
+        }
 
-        /*scan through args string, push args address into stack*/
         char *mark;
-        for (mark = (char *)(argstr_head + i); i > 0;
-             i--, mark = (char*)(argstr_head+i))
+        for (mark = (char *)(argstr_head + i); i > 0; i--, mark = (char *)(argstr_head + i))
+        {
+          if ((*mark == '\0' || *mark == ' ') && (*(mark + 1) != '\0' && *(mark + 1) != ' '))
           {
-            /*detect args, if found, push it's address to stack*/
-            if ( (*mark == '\0' || *mark == ' ') &&
-                 (*(mark+1) != '\0' && *(mark+1) != ' '))
-              {
-                *esp -= 4;
-                * (uint32_t *) *esp = (uint32_t) mark + 1;
-                argc++;
-              }
-            /*set space to '\0', so that each arg string will terminate*/
-            if (*mark == ' ')
-              *mark = '\0';
+            *esp -= 4;
+            *(uint32_t *) *esp = (uint32_t) mark + 1;
+            argc++;
           }
 
-        /*push one more arg, which is the command name, into stack*/
+          if (*mark == ' ')
+            *mark = '\0';
+        }
+
+        // Push a pointer to the command name string onto the stack as well.
         *esp -= 4;
-        * (uint32_t *) *esp = (uint32_t) argstr_head;
+        *(uint32_t *) *esp = (uint32_t) argstr_head;
         argc++;
 
-        /*push argv*/
-        * (uint32_t *) (*esp - 4) = *(uint32_t *) esp;
+        // Push the pointers to all arguments (argv) to the stack.
+        *(uint32_t *)(*esp - 4) = *(uint32_t *) esp;
         *esp -= 4;
 
-        /*push argc*/
+        // Push the argument count (argc) onto the stack.
         *esp -= 4;
-        * (int *) *esp = argc;
+        *(int *) *esp = argc;
 
-        /*push return address*/
+        // Push the return address (set to NULL for initialization).
         *esp -= 4;
-        * (uint32_t *) *esp = 0x0;
-      } 
+        *(uint32_t *) *esp = 0x0;
+      }
       else
-        vm_free_frame (kpage);
+      {
+        // Clean up allocated memory in case of failure.
+        vm_free_frame(kpage);
+      }
     }
   return success;
 }
@@ -552,23 +536,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-/* Returns a hash value. */
-unsigned
-mmfile_hash (const struct hash_elem *p_, void *aux UNUSED)
-{
-  const struct mmfile *p = hash_entry (p_, struct mmfile, elem);
-  return hash_bytes (&p->mapid, sizeof p->mapid);
-}
-
-/* Returns true if mmfile a's mapid less than b's */
-bool
-mmfile_less (const struct hash_elem *a_, const struct hash_elem *b_,
-           void *aux UNUSED)
-{
-  const struct mmfile *a = hash_entry (a_, struct mmfile, elem);
-  const struct mmfile *b = hash_entry (b_, struct mmfile, elem);
-
-  return a->mapid < b->mapid;
 }
