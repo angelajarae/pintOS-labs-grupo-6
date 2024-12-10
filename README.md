@@ -3,8 +3,8 @@
 **>> Fill in the names and email addresses of your group members.**
 
 - Angela Jara <angela.jara@unmsm.edu.pe>  
-- Alwin Dávila <alwin.davila@unmsm.edu.pe>  
-- Shamir Mantilla <shamir.mantilla@unmsm.edu.pe>
+- Alwin Dávila <alwin.davila@unmsm.edu.pe> ⚰️
+- Shamir Mantilla <shamir.mantilla@unmsm.edu.pe> ⚰️
 
 ===============================================================
 
