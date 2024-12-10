@@ -7,16 +7,6 @@
 #include <inttypes.h>
 
 #include "vm/swap.h"
-          
-/* Block device that contains the swap */
-struct block *swap_device;
-
-/* Bitmap of swap slot availablities and corresponding lock */
-static struct bitmap *swap_map;
-
-/* Represents how many sectors are needed to store a page */
-static size_t SECTORS_PER_PAGE = PGSIZE / BLOCK_SECTOR_SIZE;
-static size_t swap_size_in_page (void);
 
 void
 swap_to_pageit ()
